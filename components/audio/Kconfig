@@ -1,0 +1,56 @@
+menu "OpenAI WebRTC - Audio"
+
+    config USE_I2S_MICROPHONE
+        bool "Use I2S Digital Microphone"
+        default y
+        help
+            Enable support for I2S digital microphones (e.g., INMP441, ICS-43434, SPH0645, etc.)
+            These are digital MEMS microphones with I2S interface
+
+    config AG_AUDIO_MIC_SAMPLE_RATE
+        int "Microphone Sample Rate"
+        default 24000
+        help
+            Sample rate in Hz for microphone capture
+
+    config AG_AUDIO_MIC_BIT_DEPTH
+        int "Microphone Bit Depth"
+        default 16
+        help
+            Bit depth for audio samples
+
+    config AG_AUDIO_MIC_CHANNELS
+        int "Microphone Channels"
+        default 1
+        help
+            Number of audio channels (1 for mono, 2 for stereo)
+
+    config AG_AUDIO_MIC_EXTENDED_BIT_DEPTH
+        int "Extended Bit Depth"
+        default 24
+        depends on USE_I2S_MICROPHONE
+        help
+            Native bit capability for I2S microphones (many support 24-bit)
+
+    config AG_AUDIO_DEFAULT_PLAYBACK_VOL
+        int "Default Playback Volume"
+        range 0 100
+        default 80
+        help
+            Default playback volume level (0-100)
+
+    config AG_AUDIO_DEFAULT_MIC_GAIN
+        int "Default Microphone Gain"
+        range 0 100
+        default 80
+        help
+            Default microphone gain level (0-100)
+
+    config AG_AUDIO_ENABLE_AEC
+        bool "Enable Acoustic Echo Cancellation"
+        default n
+        help
+            Enable AEC processing for better audio quality
+            Note: AEC may cause stability issues on some configurations
+
+endmenu

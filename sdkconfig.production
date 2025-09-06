@@ -1,0 +1,173 @@
+# =============================================================================
+# PRODUCTION CONFIGURATION
+# =============================================================================
+# This configuration is optimized for production deployment with:
+# - Performance optimizations enabled
+# - Debug features disabled
+# - Security hardening
+# - Stable and reliable settings
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Application Features (Production Settings)
+# -----------------------------------------------------------------------------
+
+# Vision Configuration
+CONFIG_AG_VISION_PREVIEW_PORT=8080
+
+# Camera Configuration (Optimized for performance and battery)
+# Reduced FPS for battery life
+CONFIG_AG_VISION_DEFAULT_FPS=10
+# Higher quality for production
+CONFIG_AG_VISION_DEFAULT_QUALITY=2
+# Better quality vs compression balance
+CONFIG_AG_VISION_JPEG_QUALITY=15
+# Reduced buffer for memory optimization
+CONFIG_AG_VISION_BUFFER_FRAMES=2
+
+# Recording Configuration
+# Less frequent capture
+CONFIG_AG_VISION_CAPTURE_INTERVAL_MS=1000
+
+# Audio Configuration (Production volumes)
+# Slightly reduced for comfort
+CONFIG_AG_AUDIO_DEFAULT_PLAYBACK_VOL=75
+# Optimized gain
+CONFIG_AG_AUDIO_DEFAULT_MIC_GAIN=95
+# -----------------------------------------------------------------------------
+# Network Protocols (Production optimized)
+# -----------------------------------------------------------------------------
+CONFIG_LWIP_SNTP_MAX_SERVERS=2
+CONFIG_LWIP_MAX_SOCKETS=8
+
+# HTTP Client Configuration
+CONFIG_ESP_HTTP_CLIENT_TIMEOUT_MS=10000
+
+# Enable DTLS SRTP for WebRTC
+CONFIG_MBEDTLS_SSL_PROTO_DTLS=y
+CONFIG_MBEDTLS_SSL_DTLS_SRTP=y
+CONFIG_MBEDTLS_X509_CREATE_C=y
+
+# TLS Certificate Validation (Production Security)
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# -----------------------------------------------------------------------------
+# Debug & Development Features - DISABLED for production
+# -----------------------------------------------------------------------------
+# Production panic handler (auto-restart on panic)
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+# CONFIG_ESP_SYSTEM_PANIC_GDBSTUB=n  # Disabled
+
+# Minimal FreeRTOS tracing for production
+CONFIG_FREERTOS_USE_TRACE_FACILITY=n
+CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=n
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=n
+
+# Task watchdog enabled with aggressive timeout
+CONFIG_ESP_TASK_WDT_EN=y
+# Reduced timeout for faster recovery
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+# Panic on watchdog timeout
+CONFIG_ESP_TASK_WDT_PANIC=y
+
+# FreeRTOS Task Configuration
+CONFIG_FREERTOS_MAX_TASK_NAME_LEN=16
+CONFIG_FREERTOS_TIMER_TASK_PRIORITY=2
+
+# Stack overflow protection (keep for production)
+CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY=y
+# Disabled for performance
+CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=n
+
+# Disable experimental features
+CONFIG_IDF_EXPERIMENTAL_FEATURES=n
+
+# -----------------------------------------------------------------------------
+# Memory & Task Configuration (Production optimized)
+# -----------------------------------------------------------------------------
+# Optimized stack sizes
+# Reduced for production
+CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=1536
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=2048
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3072
+
+# -----------------------------------------------------------------------------
+# Build Optimizations (Production)
+# -----------------------------------------------------------------------------
+# Optimize for performance (not size)
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# CONFIG_COMPILER_OPTIMIZATION_SIZE=n
+
+# Disable assertions for production
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
+
+# Use custom partition table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# -----------------------------------------------------------------------------
+# ESP32-S3 SPECIFIC CONFIGURATION (PRODUCTION)
+# -----------------------------------------------------------------------------
+# NOTE: Board-specific settings (BOARD_NAME, Flash, PSRAM, Audio) are now 
+# defined in sdkconfig.defaults.freenove and sdkconfig.defaults.n16r8cam
+# Only production-specific memory optimizations remain here
+
+# PSRAM memory allocation (Production specific)
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+
+# -----------------------------------------------------------------------------
+# Security & Privacy (Production hardening)
+# -----------------------------------------------------------------------------
+# ⚠️ CRITICAL: Enable these ONLY after proper setup:
+# 1. Generate secure boot key: idf.py secure-generate-signing-key
+# 2. Configure OTA partitions (2 OTA apps, no factory)
+# 3. Burn eFuses (IRREVERSIBLE!)
+#
+# CONFIG_SECURE_BOOT=y
+# CONFIG_SECURE_FLASH_ENC_ENABLED=y
+# CONFIG_SECURE_DISABLE_ROM_DL_MODE=y
+
+# Enable heap poisoning for security
+CONFIG_HEAP_POISONING_LIGHT=y
+
+# -----------------------------------------------------------------------------
+# Logging Configuration (Minimal for production)
+# -----------------------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
+CONFIG_LOG_MAXIMUM_LEVEL_ERROR=y
+CONFIG_BOOTLOADER_LOG_LEVEL_ERROR=y
+CONFIG_LOG_COLORS=n
+
+# -----------------------------------------------------------------------------
+# Power Management (Production optimization)
+# -----------------------------------------------------------------------------
+# Enable automatic light sleep
+CONFIG_PM_ENABLE=y
+CONFIG_PM_DFS_INIT_AUTO=y
+CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=y
+
+# WiFi power save mode
+CONFIG_ESP_WIFI_PS_MIN_MODEM=y
+
+# -----------------------------------------------------------------------------
+# OTA Configuration (Production ready)
+# -----------------------------------------------------------------------------
+# ⚠️ NOTE: Requires OTA partition table (2 OTA apps, no factory)
+# Enable ONLY after partition table is configured for OTA
+# CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+# CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK=y
+
+# -----------------------------------------------------------------------------
+# Brownout Detection (Production stability)
+# -----------------------------------------------------------------------------
+CONFIG_ESP32S3_BROWNOUT_DET=y
+CONFIG_ESP32S3_BROWNOUT_DET_LVL_SEL_7=y
+
+# -----------------------------------------------------------------------------
+# Core Dump (Production diagnostics)
+# -----------------------------------------------------------------------------
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y

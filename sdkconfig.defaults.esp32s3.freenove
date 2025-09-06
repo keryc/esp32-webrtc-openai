@@ -1,0 +1,23 @@
+# =============================================================================
+# FREENOVE_ESP32_S3_WROOM SPECIFIC CONFIGURATION
+# =============================================================================
+# This file contains ONLY the settings specific to the Freenove board
+# Common ESP32-S3 settings are in sdkconfig.defaults.esp32s3
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Board Identification
+# -----------------------------------------------------------------------------
+CONFIG_AG_SYSTEM_BOARD_NAME="FREENOVE_ESP32_S3_WROOM"
+
+# -----------------------------------------------------------------------------
+# Flash Configuration (Freenove specific)
+# -----------------------------------------------------------------------------
+CONFIG_ESPTOOLPY_FLASHFREQ_120M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# -----------------------------------------------------------------------------
+# SPIRAM Configuration (Freenove: Octal SPI)
+# -----------------------------------------------------------------------------
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_120M=y

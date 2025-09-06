@@ -1,0 +1,45 @@
+menu "OpenAI WebRTC - System"
+
+    config AG_SYSTEM_TASK_STACK_SIZE
+        int "Default Task Stack Size"
+        default 4096
+        help
+            Default stack size for system tasks
+
+    config AG_SYSTEM_TASK_PRIORITY
+        int "Default Task Priority"
+        default 5
+        help
+            Default priority for system tasks
+
+    config AG_SYSTEM_BOARD_NAME
+        string "Board Name"
+        default "FREENOVE_ESP32_S3_WROOM"
+        help
+            Board identification string
+
+    menu "Console Configuration"
+        
+        config AG_CONSOLE_ENABLE
+            bool "Enable Console Commands"
+            default y
+            help
+                Enable interactive console commands
+
+        config AG_CONSOLE_MAX_CMDLINE_LENGTH
+            int "Maximum Command Line Length"
+            default 256
+            depends on AG_CONSOLE_ENABLE
+            help
+                Maximum length of console command line
+
+        config AG_CONSOLE_MAX_CMDLINE_ARGS
+            int "Maximum Command Arguments"
+            default 16
+            depends on AG_CONSOLE_ENABLE
+            help
+                Maximum number of arguments in a console command
+            
+    endmenu
+
+endmenu

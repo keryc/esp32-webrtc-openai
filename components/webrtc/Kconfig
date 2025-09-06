@@ -1,0 +1,229 @@
+menu "OpenAI WebRTC  - WebRTC"
+
+    choice WEBRTC_PROVIDER
+        prompt "WebRTC Provider"
+        default WEBRTC_PROVIDER_OPENAI
+        help
+            Select the WebRTC signaling provider
+
+        config WEBRTC_PROVIDER_OPENAI
+            bool "OpenAI Realtime API"
+            help
+                Use OpenAI's realtime API for WebRTC signaling
+
+        config WEBRTC_PROVIDER_WHIP
+            bool "WHIP Protocol"
+            help
+                Use WHIP (WebRTC-HTTP ingestion protocol)
+    endchoice
+
+    config AG_WEBRTC_SUPPORT_OPUS
+        bool "Support OPUS Codec"
+        default y
+        help
+            Enable OPUS audio codec support
+
+    config AG_WEBRTC_DATA_CHANNEL_ENABLED
+        bool "Enable Data Channel"
+        default y
+        help
+            Enable WebRTC data channel support
+            
+    config AG_VISION_ANALYSIS_TASK_STACK_SIZE
+        int "Vision analysis task stack size"
+        default 16384
+        help
+            Stack size in bytes for the vision analysis task that processes OpenAI vision API responses.
+            Increase this value if you experience stack overflow errors.
+
+    config AG_VISION_ANALYSIS_TASK_PRIORITY
+        int "Vision analysis task priority"
+        default 5
+        range 1 10
+        help
+            Priority of the vision analysis task. Higher values give the task higher priority.
+            
+    menu "OpenAI API Configuration"
+        depends on WEBRTC_PROVIDER_OPENAI
+        
+        config AG_OPENAI_REALTIME_MODEL
+            string "OpenAI Realtime Model"
+            default "gpt-4o-mini-realtime-preview"
+            help
+                OpenAI model to use for realtime API
+
+        config AG_OPENAI_TOOL_CHOICE
+            string "Tool Choice"
+            default "auto"
+            help
+                Tool choice parameter for OpenAI API
+                
+        config AG_OPENAI_VOICE
+            string "Default Voice"
+            default "ash"
+            help
+                Default voice for OpenAI TTS
+                
+        config AG_OPENAI_TYPE_SESSION_UPDATE
+            string "Session Update Type"
+            default "session.update"
+            help
+                Type identifier for session update messages
+                
+        config AG_OPENAI_TYPE_CONVERSATION_ITEM_CREATE
+            string "Conversation Item Create Type"
+            default "conversation.item.create"
+            help
+                Type identifier for conversation item create messages
+                
+        config AG_OPENAI_TYPE_RESPONSE_CREATE
+            string "Response Create Type"
+            default "response.create"
+            help
+                Type identifier for response create messages
+                
+        config AG_OPENAI_TYPE_MESSAGE
+            string "Message Type"
+            default "message"
+            help
+                Type identifier for message items
+                
+        config AG_OPENAI_TYPE_FUNCTION_CALL_OUTPUT
+            string "Function Call Output Type"
+            default "function_call_output"
+            help
+                Type identifier for function call output
+                
+        config AG_OPENAI_TYPE_INPUT_TEXT
+            string "Input Text Type"
+            default "input_text"
+            help
+                Type identifier for input text content
+                
+        config AG_OPENAI_FIELD_TYPE
+            string "Type Field Name"
+            default "type"
+            help
+                JSON field name for type
+                
+        config AG_OPENAI_FIELD_ROLE
+            string "Role Field Name"
+            default "role"
+            help
+                JSON field name for role
+                
+        config AG_OPENAI_FIELD_MODEL
+            string "Model Field Name"
+            default "model"
+            help
+                JSON field name for model
+                
+        config AG_OPENAI_FIELD_VOICE
+            string "Voice Field Name"
+            default "voice"
+            help
+                JSON field name for voice
+    endmenu
+
+    menu "OpenAI Vision API Configuration"
+        depends on AG_VISION_ENABLE
+
+        config AG_VISION_REALTIME_FRAMES_COUNT
+            int "Number of frames to send via Realtime API"
+            default 2
+            range 1 5
+            help
+                Number of frames to send simultaneously to OpenAI Realtime API for better context.
+                More frames provide better temporal context but increase data usage.
+
+        config AG_VISION_OPENAI_FAST_MAX_TOKENS
+            int "Max tokens for fast vision analysis (quick response)"
+            default 50
+            range 30 100
+            help
+                Maximum number of tokens for ultra-fast vision response
+
+        config AG_VISION_OPENAI_DETAILED_MAX_TOKENS
+            int "Max tokens for detailed vision analysis (context gathering)"
+            default 300
+            range 200 800
+            help
+                Maximum number of tokens for detailed vision context
+
+        config AG_VISION_OPENAI_TEMPERATURE
+            string "Temperature for OpenAI API"
+            default "0.6"
+            help
+                Temperature parameter for OpenAI API (0.0 to 1.0)
+
+        config AG_VISION_OPENAI_ROLE_USER
+            string "User role name"
+            default "user"
+            help
+                Role name for user messages
+
+        config AG_VISION_OPENAI_ROLE_ASSISTANT
+            string "Assistant role name"
+            default "assistant"
+            help
+                Role name for assistant messages
+
+        config AG_VISION_OPENAI_ROLE_SYSTEM
+            string "System role name"
+            default "system"
+            help
+                Role name for system messages
+
+        config AG_VISION_OPENAI_TYPE_TEXT
+            string "Text content type"
+            default "text"
+            help
+                Type identifier for text content
+
+        config AG_VISION_OPENAI_TYPE_IMAGE_URL
+            string "Image URL content type"
+            default "image_url"
+            help
+                Type identifier for image URL content
+
+        config AG_VISION_OPENAI_FIELD_TYPE
+            string "Type field name"
+            default "type"
+            help
+                JSON field name for type
+
+        config AG_VISION_OPENAI_FIELD_ROLE
+            string "Role field name"
+            default "role"
+            help
+                JSON field name for role
+
+        config AG_VISION_OPENAI_FIELD_CONTENT
+            string "Content field name"
+            default "content"
+            help
+                JSON field name for content
+
+        config AG_VISION_OPENAI_FIELD_URL
+            string "URL field name"
+            default "url"
+            help
+                JSON field name for URL
+
+    endmenu
+
+    menu "Debug Options"
+        config AG_WEBRTC_DEBUG_LOGS
+            bool "Enable WebRTC debug logs"
+            default n
+            help
+                Enable detailed logging for WebRTC operations.
+                
+        config AG_TRANSCRIPT_LOGGING
+            bool "Enable transcript logging"
+            default n
+            help
+                Enable logging of audio transcripts to console.
+    endmenu
+
+endmenu

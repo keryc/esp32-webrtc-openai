@@ -1,0 +1,92 @@
+menu "OpenAI WebRTC  - Vision"
+
+    config AG_VISION_ENABLE
+        bool "Enable Vision Module"
+        default y
+        help
+            Enable camera and vision processing capabilities
+
+    menu "Camera Configuration"
+        depends on AG_VISION_ENABLE
+        
+        config AG_VISION_DEFAULT_FPS
+            int "Default Camera FPS"
+            range 1 30
+            default 15
+            help
+                Default frames per second for camera capture
+        
+        config AG_VISION_DEFAULT_QUALITY
+            int "Default Camera Quality (0=LOW, 1=MEDIUM, 2=HIGH, 3=HD)"
+            range 0 3
+            default 1
+            help
+                Default camera quality setting
+        
+        config AG_VISION_JPEG_QUALITY
+            int "JPEG Compression Quality"
+            range 1 100
+            default 10
+            help
+                JPEG quality (lower value = better quality on ESP32)
+        
+        config AG_VISION_BUFFER_FRAMES
+            int "Frame Buffer Size"
+            range 1 10
+            default 3
+            help
+                Number of frames to buffer in queue
+    endmenu
+
+    menu "Voice Detection Configuration"
+        depends on AG_VISION_ENABLE
+        
+        config AG_VOICE_ENERGY_THRESHOLD
+            int "Voice Energy Threshold"
+            range 100 1000
+            default 300
+            help
+                Energy threshold for voice detection (lower = more sensitive)
+        
+        config AG_VOICE_MIN_DURATION_MS
+            int "Minimum Voice Duration (ms)"
+            range 50 500
+            default 150
+            help
+                Minimum duration to consider as valid voice activity
+        
+        config AG_VOICE_SILENCE_TIMEOUT_MS
+            int "Voice Silence Timeout (ms)"
+            range 1000 10000
+            default 3000
+            help
+                Duration of silence before considering voice stopped
+        
+    endmenu
+
+    menu "Recording Configuration"
+        depends on AG_VISION_ENABLE
+        
+        config AG_VISION_CAPTURE_INTERVAL_MS
+            int "Default Capture Interval (ms)"
+            range 50 5000
+            default 500
+            help
+                Default interval for continuous capture mode
+        
+        config AG_VISION_RECORDING_DEFAULT_FPS
+            int "Default Recording FPS"
+            range 1 30
+            default 10
+            help
+                Default FPS for video recording mode
+    endmenu
+
+    config AG_VISION_PREVIEW_PORT
+        int "Camera Preview Server Port"
+        default 8080
+        depends on AG_VISION_ENABLE
+        help
+            HTTP port for camera preview server
+
+endmenu

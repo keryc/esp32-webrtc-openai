@@ -1,0 +1,15 @@
+menu "OpenAI WebRTC - Network/WiFi"
+
+    config AG_WIFI_SSID
+        string "WiFi SSID"
+        default "YourWiFiNetwork"
+        help
+            WiFi network name to connect to
+
+    config AG_WIFI_PASSWORD
+        string "WiFi Password"
+        default "YourWiFiPassword"
+        help
+            WiFi network password
+
+endmenu

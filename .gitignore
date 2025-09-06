@@ -1,0 +1,51 @@
+gitignore
+# Build artifacts
+build/
+**/build/
+*.o
+*.a
+*.so
+*.bin
+*.elf
+*.map
+
+# ESP-IDF specific
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd
+.cache/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.bak
