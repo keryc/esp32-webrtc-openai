@@ -454,20 +454,35 @@ static esp_err_t finalize_wav_file(recorder_handle_t handle)
 
 static void generate_filename(char *buffer, size_t buffer_size, const char *dir)
 {
-    // Usar solo un contador para nombres simples que funcionan
+    // Use a simple counter for filenames
     static uint32_t session_counter = 0;
-    session_counter++;
+    struct stat st;
+    int ret;
     
-    // Formato simple: rec_1.wav, rec_2.wav, etc.
-    int ret = snprintf(buffer, buffer_size, "%s/rec_%u.wav", 
+    // Find a filename that doesn't exist
+    do {
+        session_counter++;
+        
+        // Simple format: rec_1.wav, rec_2.wav, etc.
+        ret = snprintf(buffer, buffer_size, "%s/rec_%u.wav", 
                        dir, (unsigned int)session_counter);
-    
-    // Verificar que snprintf no falló
-    if (ret < 0 || ret >= (int)buffer_size) {
-        ESP_LOGE(TAG, "Failed to generate filename (ret=%d, buffer_size=%zu)", ret, buffer_size);
-        // Fallback ultra simple
-        snprintf(buffer, buffer_size, "%s/r%u.wav", dir, (unsigned int)session_counter);
-    }
+        
+        // Check if snprintf failed
+        if (ret < 0 || ret >= (int)buffer_size) {
+            ESP_LOGE(TAG, "Failed to generate filename (ret=%d, buffer_size=%zu)", ret, buffer_size);
+            // Ultra simple fallback
+            snprintf(buffer, buffer_size, "%s/r%u.wav", dir, (unsigned int)session_counter);
+        }
+        
+        // Check if file already exists
+        if (stat(buffer, &st) != 0) {
+            // File doesn't exist, we can use this name
+            break;
+        }
+        
+        ESP_LOGD(TAG, "File %s already exists, trying next counter", buffer);
+        
+    } while (1);  // Continue until we find an available name
     
     ESP_LOGI(TAG, "Generated filename: %s", buffer);
 }
