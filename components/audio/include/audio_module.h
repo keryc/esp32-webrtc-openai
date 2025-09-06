@@ -23,6 +23,13 @@ typedef void (*audio_event_callback_t)(bool system_ready);
 esp_err_t audio_module_init(audio_event_callback_t callback);
 
 /**
+ * @brief Set recorder handle for audio module
+ * 
+ * @param recorder_handle Handle to the recorder instance
+ */
+void audio_module_set_recorder_handle(void *recorder_handle);
+
+/**
  * @brief Start audio system
  * @return ESP_OK on success
  */

@@ -26,6 +26,10 @@
 #include "camera_commands.h"
 #include "thread_scheduler.h"
 #include "system_commands.h"
+#include "sdspi_module.h"
+#include "sdspi_commands.h"
+#include "recorder_module.h"
+#include "recorder_commands.h"
 #include "openai_client.h"
 
 static const char *TAG = "main";
@@ -90,6 +94,7 @@ static void webrtc_event_callback(webrtc_state_t state)
 {  
     const char *state_str[] = {"DISCONNECTED", "CONNECTING", "CONNECTED", "FAILED"};
     ESP_LOGI(TAG, "WebRTC state changed to: %s", state_str[state]);
+    
     if (state == WEBRTC_STATE_CONNECTED) {
         ESP_LOGI(TAG, "WebRTC connected");
     } else if (state == WEBRTC_STATE_FAILED) {
@@ -133,6 +138,53 @@ static void cam_event_callback(cam_event_t event, void *data)
     }
 }
 
+static void sdspi_event_callback(sdspi_event_t event, void *data)
+{
+    switch (event) {
+        case SDSPI_EVENT_MOUNTED:
+            ESP_LOGI(TAG, "SD card mounted successfully for audio recording");
+            
+            // Pequeño delay para asegurar que el filesystem esté listo
+            vTaskDelay(pdMS_TO_TICKS(100));
+            
+            // Initialize recorder if SD card is mounted
+            recorder_config_t rec_config = RECORDER_DEFAULT_CONFIG();
+            rec_config.max_file_size_bytes = 0; // 0 = sin límite de tamaño
+            recorder_handle_t rec_handle = NULL;
+            esp_err_t rec_ret = recorder_init(&rec_config, &rec_handle);
+            if (rec_ret == ESP_OK) {
+                ESP_LOGI(TAG, "Audio recorder initialized");
+                
+                // Start auto-recording
+                esp_err_t start_ret = recorder_start(rec_handle);
+                if (start_ret == ESP_OK) {
+                    ESP_LOGI(TAG, "🔴 Auto-recording started - capturing all audio to SD card");
+                } else {
+                    ESP_LOGE(TAG, "Failed to start auto-recording: %s", esp_err_to_name(start_ret));
+                }
+            } else {
+                ESP_LOGW(TAG, "Failed to initialize recorder: %s", esp_err_to_name(rec_ret));
+            }
+            break;
+            
+        case SDSPI_EVENT_UNMOUNTED:
+            ESP_LOGI(TAG, "SD card unmounted");
+            break;
+            
+        case SDSPI_EVENT_ERROR:
+            ESP_LOGE(TAG, "SD card error occurred");
+            break;
+            
+        case SDSPI_EVENT_WRITE_COMPLETE:
+            ESP_LOGD(TAG, "SD card write complete");
+            break;
+            
+        case SDSPI_EVENT_READ_COMPLETE:
+            ESP_LOGD(TAG, "SD card read complete");
+            break;
+    }
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "===== Starting System =====");
@@ -146,6 +198,14 @@ void app_main(void)
     
     // Initialize board hardware peripherals (I2C, codec, camera interfaces, etc.)
     ESP_ERROR_CHECK(board_module_init());
+
+    // Initialize SD card module before audio (for recording)
+    ESP_LOGI(TAG, "Initializing SD card...");
+    sdspi_config_t sd_config = SDSPI_DEFAULT_CONFIG();
+    esp_err_t sd_ret = sdspi_module_init(&sd_config, sdspi_event_callback);
+    if (sd_ret != ESP_OK) {
+        ESP_LOGW(TAG, "SD card not available: %s", esp_err_to_name(sd_ret));
+    }
 
     // Initialize audio module
     ESP_ERROR_CHECK(audio_module_init(NULL));
@@ -187,6 +247,8 @@ void app_main(void)
     ESP_ERROR_CHECK(webrtc_register_commands());
     ESP_ERROR_CHECK(camera_commands_register());
     ESP_ERROR_CHECK(system_commands_register());
+    ESP_ERROR_CHECK(sdspi_commands_register());
+    ESP_ERROR_CHECK(recorder_commands_register());
     
     // Start console task
     ESP_ERROR_CHECK(console_module_start());
@@ -198,7 +260,7 @@ void app_main(void)
         ESP_LOGI(TAG, "Auto-connecting to saved network: %s", creds.ssid);
         wifi_module_connect(creds.ssid, creds.password);
     }
-
+    
     while (1) {        
         // Reduced polling frequency to save power
         media_lib_thread_sleep(5000);

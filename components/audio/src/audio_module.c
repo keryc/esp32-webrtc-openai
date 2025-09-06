@@ -36,6 +36,7 @@ static struct {
     audio_capture_system_t capture_sys;
     audio_player_system_t player_sys;
     esp_capture_sink_handle_t primary_capture_path;
+    void *recorder_handle;
 } audio_state = {0};
 
 // Internal media system builder using submodules
@@ -54,8 +55,8 @@ static esp_err_t audio_buildup_media_system(void)
         return ret;
     }
     
-    // Build player system using submodule
-    ret = audio_player_build_system(&audio_state.player_sys);
+    // Build player system using submodule with recorder handle
+    ret = audio_player_build_system(&audio_state.player_sys, audio_state.recorder_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to build player system: %s", esp_err_to_name(ret));
         return ret;
@@ -126,6 +127,12 @@ esp_err_t audio_module_start(void)
     
     ESP_LOGI(TAG, "Audio system started successfully");
     return ESP_OK;
+}
+
+void audio_module_set_recorder_handle(void *recorder_handle)
+{
+    audio_state.recorder_handle = recorder_handle;
+    ESP_LOGI(TAG, "Recorder handle set: %p", recorder_handle);
 }
 
 esp_err_t audio_module_stop(void)

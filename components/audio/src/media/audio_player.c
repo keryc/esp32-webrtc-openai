@@ -13,10 +13,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "memory_manager.h"
+#include "recorder_module.h"
 
 static const char *TAG = "audio_player";
 
-esp_err_t audio_player_build_system(audio_player_system_t *player_sys)
+esp_err_t audio_player_build_system(audio_player_system_t *player_sys, void *recorder_handle)
 {
     if (!player_sys) {
         ESP_LOGE(TAG, "Invalid player system pointer");
@@ -25,8 +26,13 @@ esp_err_t audio_player_build_system(audio_player_system_t *player_sys)
     
     ESP_LOGI(TAG, "Building audio player system");
     
+    // Set recorder handle if provided
+    player_sys->recorder_handle = recorder_handle;
+    
     i2s_render_cfg_t i2s_cfg = {
         .play_handle = get_playback_handle(),
+        .cb = recorder_handle ? recorder_audio_callback : NULL,
+        .ctx = recorder_handle,
     };
     player_sys->audio_render = av_render_alloc_i2s_render(&i2s_cfg);
     if (player_sys->audio_render == NULL) {
@@ -298,4 +304,61 @@ esp_err_t audio_player_play_wav(audio_player_system_t *player_sys, const char *f
     
     ESP_LOGI(TAG, "✅ WAV playback completed: %s", filename);
     return ESP_OK;
+}
+
+esp_err_t audio_player_start_recording(audio_player_system_t *player_sys)
+{
+    if (!player_sys) {
+        ESP_LOGE(TAG, "Invalid player system pointer");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!player_sys->recorder_handle) {
+        ESP_LOGE(TAG, "Recorder not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    esp_err_t ret = recorder_start(player_sys->recorder_handle);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "🔴 Recording started");
+    } else {
+        ESP_LOGE(TAG, "Failed to start recording: %s", esp_err_to_name(ret));
+    }
+    
+    return ret;
+}
+
+esp_err_t audio_player_stop_recording(audio_player_system_t *player_sys)
+{
+    if (!player_sys) {
+        ESP_LOGE(TAG, "Invalid player system pointer");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!player_sys->recorder_handle) {
+        ESP_LOGE(TAG, "Recorder not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    esp_err_t ret = recorder_stop(player_sys->recorder_handle);
+    if (ret == ESP_OK) {
+        const char *filename = recorder_get_current_filename(player_sys->recorder_handle);
+        size_t bytes = recorder_get_bytes_written(player_sys->recorder_handle);
+        ESP_LOGI(TAG, "⏹️ Recording stopped: %s (%.2f MB)", 
+                 filename, bytes / (1024.0 * 1024.0));
+    } else {
+        ESP_LOGE(TAG, "Failed to stop recording: %s", esp_err_to_name(ret));
+    }
+    
+    return ret;
+}
+
+bool audio_player_is_recording(audio_player_system_t *player_sys)
+{
+    if (!player_sys || !player_sys->recorder_handle) {
+        return false;
+    }
+    
+    recorder_state_t state = recorder_get_state(player_sys->recorder_handle);
+    return (state == RECORDER_STATE_RECORDING);
 }

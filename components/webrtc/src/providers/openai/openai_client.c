@@ -726,7 +726,7 @@ esp_err_t openai_realtime_start(void)
 #ifdef CONFIG_AG_WEBRTC_SUPPORT_OPUS
                 .codec = ESP_PEER_AUDIO_CODEC_OPUS,
                 .sample_rate = 24000,
-                .channel = 2,
+                .channel = 1,
 #else
                 .codec = ESP_PEER_AUDIO_CODEC_G711A,
 #endif
