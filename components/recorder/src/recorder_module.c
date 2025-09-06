@@ -316,11 +316,13 @@ static void recorder_write_task(void *arg)
     recorder_handle_t handle = (recorder_handle_t)arg;
     size_t item_size;
     void *item;
+    size_t last_header_update = 0;
+    const size_t HEADER_UPDATE_INTERVAL = 32 * 1024;  // Update headers every 32KB for better protection
     
     ESP_LOGI(TAG, "Write task started");
     
     while (!handle->stop_requested) {
-        // Procesar datos del buffer continuamente, con timeout corto para verificar stop_requested
+        // Process buffer data continuously with short timeout to check stop_requested
         item = xRingbufferReceiveUpTo(handle->ring_buffer, &item_size, pdMS_TO_TICKS(10), 
                                       handle->config.buffer_size);
         
@@ -334,8 +336,34 @@ static void recorder_write_task(void *arg)
                 handle->data_size += written;
                 handle->bytes_written += written;
                 
-                // Flush más frecuente para evitar acumulación
-                if (handle->bytes_written % (1024 * 1024) == 0) {  // Cada 1MB
+                // Periodically update WAV headers to keep file valid in case of disconnection
+                if (handle->data_size - last_header_update >= HEADER_UPDATE_INTERVAL) {
+                    // Save current file position
+                    long current_pos = ftell(handle->file);
+                    
+                    // Update RIFF header with file size
+                    fseek(handle->file, 4, SEEK_SET);
+                    uint32_t file_size = 36 + handle->data_size;
+                    fwrite(&file_size, sizeof(uint32_t), 1, handle->file);
+                    
+                    // Update DATA header with data size
+                    fseek(handle->file, 40, SEEK_SET);
+                    fwrite(&handle->data_size, sizeof(uint32_t), 1, handle->file);
+                    
+                    // Return to current position to continue writing
+                    fseek(handle->file, current_pos, SEEK_SET);
+                    
+                    // Force write to disk
+                    fflush(handle->file);
+                    fsync(fileno(handle->file));
+                    
+                    last_header_update = handle->data_size;
+                    ESP_LOGD(TAG, "Updated WAV headers at %.1f MB", 
+                             handle->data_size / (1024.0 * 1024.0));
+                }
+                
+                // Flush more frequently to avoid accumulation
+                if (handle->bytes_written % (1024 * 1024) == 0) {  // Every 1MB
                     fflush(handle->file);
                     ESP_LOGI(TAG, "📼 Recording: %.1f MB captured", 
                              handle->bytes_written / (1024.0 * 1024.0));
@@ -344,7 +372,7 @@ static void recorder_write_task(void *arg)
             vRingbufferReturnItem(handle->ring_buffer, item);
         }
         
-        // Yield para evitar watchdog
+        // Yield to avoid watchdog
         taskYIELD();
     }
     
@@ -436,12 +464,17 @@ static esp_err_t finalize_wav_file(recorder_handle_t handle)
         return ESP_OK;
     }
     
+    // Update final headers
     fseek(handle->file, 4, SEEK_SET);
     uint32_t file_size = 36 + handle->data_size;
     fwrite(&file_size, sizeof(uint32_t), 1, handle->file);
     
     fseek(handle->file, 40, SEEK_SET);
     fwrite(&handle->data_size, sizeof(uint32_t), 1, handle->file);
+    
+    // Ensure everything is written to disk before closing
+    fflush(handle->file);
+    fsync(fileno(handle->file));
     
     fclose(handle->file);
     handle->file = NULL;
