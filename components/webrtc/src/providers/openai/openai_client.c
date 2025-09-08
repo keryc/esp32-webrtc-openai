@@ -223,19 +223,23 @@ static void send_images_to_realtime(char **base64_images, int image_count, const
     }
 }
 
-static int handle_visual_analysis(attribute_t *attr)
+// Structure to pass data to async task
+typedef struct {
+    char *context;
+    char *call_id;
+    int max_frames;
+} vision_task_params_t;
+
+// Async task to handle vision analysis
+static void vision_analysis_task(void *pvParameters)
 {
-    const char *context = attr->s_value ? attr->s_value : "Analyze what you see!";
-    const char *call_id = attr->call_id ? attr->call_id : "unknown_call";
+    vision_task_params_t *params = (vision_task_params_t *)pvParameters;
     
-    ESP_LOGI(TAG, "🎯 Vision analysis requested: %s", context);
+    ESP_LOGI(TAG, "📸 Capturing %d frames on-demand...", params->max_frames);
     
     // Get frames on-demand (battery efficient)
     int frame_count = 0;
-    int max_frames = CONFIG_AG_VISION_REALTIME_FRAMES_COUNT;
-    
-    ESP_LOGI(TAG, "📸 Capturing %d frames on-demand...", max_frames);
-    char **base64_frames = cam_module_get_vision_frames(max_frames, &frame_count);
+    char **base64_frames = cam_module_get_vision_frames(params->max_frames, &frame_count);
     
     if (!base64_frames || frame_count == 0) {
         ESP_LOGW(TAG, "No frames captured, trying single frame capture");
@@ -244,9 +248,8 @@ static int handle_visual_analysis(attribute_t *attr)
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) {
             ESP_LOGE(TAG, "Failed to get frame for analysis");
-            // Send error response via function call output
-            send_vision_result_to_openai("Error: Could not capture image for analysis", call_id);
-            return 0;
+            send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+            goto cleanup;
         }
         
         // Encode single frame to base64
@@ -256,8 +259,8 @@ static int handle_visual_analysis(attribute_t *attr)
         if (!single_base64) {
             esp_camera_fb_return(fb);
             ESP_LOGE(TAG, "Failed to allocate base64 buffer");
-            send_vision_result_to_openai("Error:  Could not capture image for analysis", call_id);
-            return 0;
+            send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+            goto cleanup;
         }
         
         size_t actual_size = 0;
@@ -272,12 +275,12 @@ static int handle_visual_analysis(attribute_t *attr)
             frame_count = 1;
         } else {
             mem_free(single_base64);
-            send_vision_result_to_openai("Error:  Could not capture image for analysis", call_id);
-            return 0;
+            send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+            goto cleanup;
         }
     }
     
-    ESP_LOGI(TAG, "📷 Got %d/%d frames ready for Realtime API streaming", frame_count, max_frames);
+    ESP_LOGI(TAG, "📷 Got %d/%d frames ready for Realtime API streaming", frame_count, params->max_frames);
     
     // Create a comprehensive prompt that combines the original request
     char *combined_prompt = mem_alloc(2048, MEM_POLICY_PREFER_PSRAM, "combined_prompt");
@@ -287,14 +290,14 @@ static int handle_visual_analysis(attribute_t *attr)
             if (base64_frames[i]) mem_free(base64_frames[i]);
         }
         mem_free(base64_frames);
-        send_vision_result_to_openai("Error:  Could not capture image for analysis", call_id);
-        return 0;
+        send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+        goto cleanup;
     }
     
     snprintf(combined_prompt, 2048,
             "Analyze these %d images of the environment. %s\n"
             "Provide a clear and concise answer",
-            frame_count, context);
+            frame_count, params->context);
     
     // Send images directly via WebRTC Realtime API
     ESP_LOGI(TAG, "🚀 Sending %d images directly to OpenAI Realtime API!", frame_count);
@@ -311,11 +314,64 @@ static int handle_visual_analysis(attribute_t *attr)
     char ack_message[512];
     snprintf(ack_message, sizeof(ack_message),
             "Processing %d environment images. Analyzing: %s",
-            frame_count, context);
-    send_vision_result_to_openai(ack_message, call_id);
+            frame_count, params->context);
+    send_vision_result_to_openai(ack_message, params->call_id);
     
     ESP_LOGI(TAG, "✅ Vision analysis request completed");
+
+cleanup:
+    // Free parameters
+    if (params->context) mem_free(params->context);
+    if (params->call_id) mem_free(params->call_id);
+    mem_free(params);
     
+    // Delete this task
+    vTaskDelete(NULL);
+}
+
+static int handle_visual_analysis(attribute_t *attr)
+{
+    const char *context = attr->s_value ? attr->s_value : "Analyze what you see!";
+    const char *call_id = attr->call_id ? attr->call_id : "unknown_call";
+    
+    ESP_LOGI(TAG, "🎯 Vision analysis requested: %s", context);
+    
+    // Prepare parameters for async task
+    vision_task_params_t *params = mem_alloc(sizeof(vision_task_params_t), MEM_POLICY_PREFER_PSRAM, "vision_params");
+    if (!params) {
+        ESP_LOGE(TAG, "Failed to allocate vision task parameters");
+        send_vision_result_to_openai("Error: Memory allocation failed", call_id);
+        return 0;
+    }
+    
+    // Duplicate strings for the async task
+    params->context = mem_alloc(strlen(context) + 1, MEM_POLICY_PREFER_PSRAM, "vision_context");
+    if (params->context) strcpy(params->context, context);
+    
+    params->call_id = mem_alloc(strlen(call_id) + 1, MEM_POLICY_PREFER_PSRAM, "vision_callid");
+    if (params->call_id) strcpy(params->call_id, call_id);
+    params->max_frames = CONFIG_AG_VISION_REALTIME_FRAMES_COUNT;
+    
+    // Create async task with lower priority to avoid audio disruption
+    BaseType_t ret = xTaskCreate(
+        vision_analysis_task,           // Task function
+        "vision_analysis",              // Task name
+        8192,                           // Stack size (increased for image processing)
+        params,                         // Parameters
+        tskIDLE_PRIORITY + 1,           // Low priority to not interfere with audio
+        NULL                            // Task handle (not needed)
+    );
+    
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create vision analysis task");
+        if (params->context) mem_free(params->context);
+        if (params->call_id) mem_free(params->call_id);
+        mem_free(params);
+        send_vision_result_to_openai("Error: Failed to start vision analysis", call_id);
+        return 0;
+    }
+    
+    ESP_LOGI(TAG, "Vision analysis task started asynchronously");
     return 0;
 }
 
