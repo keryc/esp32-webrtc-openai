@@ -105,7 +105,7 @@ CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
 
 # Use custom partition table
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16mb.csv"
 
 # -----------------------------------------------------------------------------
 # ESP32-S3 SPECIFIC CONFIGURATION (PRODUCTION)
@@ -133,23 +133,26 @@ CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
 CONFIG_HEAP_POISONING_LIGHT=y
 
 # -----------------------------------------------------------------------------
-# Logging Configuration (Minimal for production)
+# Logging Configuration (Production with debug capability)
 # -----------------------------------------------------------------------------
-CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
-CONFIG_LOG_MAXIMUM_LEVEL_ERROR=y
-CONFIG_BOOTLOADER_LOG_LEVEL_ERROR=y
+# Changed to WARN level for better production debugging
+# Still filters out verbose INFO/DEBUG messages
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_LOG_MAXIMUM_LEVEL_WARN=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
 CONFIG_LOG_COLORS=n
 
 # -----------------------------------------------------------------------------
 # Power Management (Production optimization)
 # -----------------------------------------------------------------------------
-# Enable automatic light sleep
-CONFIG_PM_ENABLE=y
-CONFIG_PM_DFS_INIT_AUTO=y
-CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=y
+# Disabled for lower latency in real-time audio/video processing
+# Re-enable if battery life is more important than latency
+CONFIG_PM_ENABLE=n
+# CONFIG_PM_DFS_INIT_AUTO=n
+# CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=n
 
-# WiFi power save mode
-CONFIG_ESP_WIFI_PS_MIN_MODEM=y
+# WiFi power save disabled for better real-time performance
+# CONFIG_ESP_WIFI_PS_MIN_MODEM=n
 
 # -----------------------------------------------------------------------------
 # OTA Configuration (Production ready)

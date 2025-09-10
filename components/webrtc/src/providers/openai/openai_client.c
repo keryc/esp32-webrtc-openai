@@ -31,9 +31,6 @@ static struct {
     bool audio_paused;
 } audio_state = {0};
 
-// Activation mode state
-static bool vision_mode_enabled = true; // Default to vision enabled
-
 // Response tracking to prevent concurrent responses
 static struct {
     bool response_in_progress;
@@ -223,19 +220,23 @@ static void send_images_to_realtime(char **base64_images, int image_count, const
     }
 }
 
-static int handle_visual_analysis(attribute_t *attr)
+// Structure to pass data to async task
+typedef struct {
+    char *context;
+    char *call_id;
+    int max_frames;
+} vision_task_params_t;
+
+// Async task to handle vision analysis
+static void vision_analysis_task(void *pvParameters)
 {
-    const char *context = attr->s_value ? attr->s_value : "Analyze what you see!";
-    const char *call_id = attr->call_id ? attr->call_id : "unknown_call";
+    vision_task_params_t *params = (vision_task_params_t *)pvParameters;
     
-    ESP_LOGI(TAG, "🎯 Vision analysis requested: %s", context);
+    ESP_LOGI(TAG, "📸 Capturing %d frames on-demand...", params->max_frames);
     
     // Get frames on-demand (battery efficient)
     int frame_count = 0;
-    int max_frames = CONFIG_AG_VISION_REALTIME_FRAMES_COUNT;
-    
-    ESP_LOGI(TAG, "📸 Capturing %d frames on-demand...", max_frames);
-    char **base64_frames = cam_module_get_vision_frames(max_frames, &frame_count);
+    char **base64_frames = cam_module_get_vision_frames(params->max_frames, &frame_count);
     
     if (!base64_frames || frame_count == 0) {
         ESP_LOGW(TAG, "No frames captured, trying single frame capture");
@@ -244,9 +245,8 @@ static int handle_visual_analysis(attribute_t *attr)
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) {
             ESP_LOGE(TAG, "Failed to get frame for analysis");
-            // Send error response via function call output
-            send_vision_result_to_openai("Error: Could not capture image for analysis", call_id);
-            return 0;
+            send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+            goto cleanup;
         }
         
         // Encode single frame to base64
@@ -256,8 +256,8 @@ static int handle_visual_analysis(attribute_t *attr)
         if (!single_base64) {
             esp_camera_fb_return(fb);
             ESP_LOGE(TAG, "Failed to allocate base64 buffer");
-            send_vision_result_to_openai("Error:  Could not capture image for analysis", call_id);
-            return 0;
+            send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+            goto cleanup;
         }
         
         size_t actual_size = 0;
@@ -272,12 +272,12 @@ static int handle_visual_analysis(attribute_t *attr)
             frame_count = 1;
         } else {
             mem_free(single_base64);
-            send_vision_result_to_openai("Error:  Could not capture image for analysis", call_id);
-            return 0;
+            send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+            goto cleanup;
         }
     }
     
-    ESP_LOGI(TAG, "📷 Got %d/%d frames ready for Realtime API streaming", frame_count, max_frames);
+    ESP_LOGI(TAG, "📷 Got %d/%d frames ready for Realtime API streaming", frame_count, params->max_frames);
     
     // Create a comprehensive prompt that combines the original request
     char *combined_prompt = mem_alloc(2048, MEM_POLICY_PREFER_PSRAM, "combined_prompt");
@@ -287,14 +287,14 @@ static int handle_visual_analysis(attribute_t *attr)
             if (base64_frames[i]) mem_free(base64_frames[i]);
         }
         mem_free(base64_frames);
-        send_vision_result_to_openai("Error:  Could not capture image for analysis", call_id);
-        return 0;
+        send_vision_result_to_openai("Error: Could not capture image for analysis", params->call_id);
+        goto cleanup;
     }
     
     snprintf(combined_prompt, 2048,
             "Analyze these %d images of the environment. %s\n"
             "Provide a clear and concise answer",
-            frame_count, context);
+            frame_count, params->context);
     
     // Send images directly via WebRTC Realtime API
     ESP_LOGI(TAG, "🚀 Sending %d images directly to OpenAI Realtime API!", frame_count);
@@ -311,11 +311,64 @@ static int handle_visual_analysis(attribute_t *attr)
     char ack_message[512];
     snprintf(ack_message, sizeof(ack_message),
             "Processing %d environment images. Analyzing: %s",
-            frame_count, context);
-    send_vision_result_to_openai(ack_message, call_id);
+            frame_count, params->context);
+    send_vision_result_to_openai(ack_message, params->call_id);
     
     ESP_LOGI(TAG, "✅ Vision analysis request completed");
+
+cleanup:
+    // Free parameters
+    if (params->context) mem_free(params->context);
+    if (params->call_id) mem_free(params->call_id);
+    mem_free(params);
     
+    // Delete this task
+    vTaskDelete(NULL);
+}
+
+static int handle_visual_analysis(attribute_t *attr)
+{
+    const char *context = attr->s_value ? attr->s_value : "Analyze what you see!";
+    const char *call_id = attr->call_id ? attr->call_id : "unknown_call";
+    
+    ESP_LOGI(TAG, "🎯 Vision analysis requested: %s", context);
+    
+    // Prepare parameters for async task
+    vision_task_params_t *params = mem_alloc(sizeof(vision_task_params_t), MEM_POLICY_PREFER_PSRAM, "vision_params");
+    if (!params) {
+        ESP_LOGE(TAG, "Failed to allocate vision task parameters");
+        send_vision_result_to_openai("Error: Memory allocation failed", call_id);
+        return 0;
+    }
+    
+    // Duplicate strings for the async task
+    params->context = mem_alloc(strlen(context) + 1, MEM_POLICY_PREFER_PSRAM, "vision_context");
+    if (params->context) strcpy(params->context, context);
+    
+    params->call_id = mem_alloc(strlen(call_id) + 1, MEM_POLICY_PREFER_PSRAM, "vision_callid");
+    if (params->call_id) strcpy(params->call_id, call_id);
+    params->max_frames = CONFIG_AG_VISION_REALTIME_FRAMES_COUNT;
+    
+    // Create async task with lower priority to avoid audio disruption
+    BaseType_t ret = xTaskCreate(
+        vision_analysis_task,           // Task function
+        "vision_analysis",              // Task name
+        8192,                           // Stack size (increased for image processing)
+        params,                         // Parameters
+        tskIDLE_PRIORITY + 1,           // Low priority to not interfere with audio
+        NULL                            // Task handle (not needed)
+    );
+    
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create vision analysis task");
+        if (params->context) mem_free(params->context);
+        if (params->call_id) mem_free(params->call_id);
+        mem_free(params);
+        send_vision_result_to_openai("Error: Failed to start vision analysis", call_id);
+        return 0;
+    }
+    
+    ESP_LOGI(TAG, "Vision analysis task started asynchronously");
     return 0;
 }
 
@@ -384,8 +437,8 @@ static int send_function_desc(bool vision_enabled)
     cJSON_AddItemToObject(root, "session", session);
 
     cJSON_AddStringToObject(session, "type", "realtime");
-    const char *instructions = vision_enabled ? INSTRUCTIONS_AUDIO_VISION : INSTRUCTIONS_AUDIO_ONLY;
-    cJSON_AddStringToObject(session, "instructions", instructions);
+    // Always use vision instructions now - audio-only mode removed
+    cJSON_AddStringToObject(session, "instructions", INSTRUCTIONS_AUDIO_VISION);
     
     cJSON *tools = cJSON_CreateArray();
     cJSON_AddItemToObject(session, "tools", tools);
@@ -393,7 +446,8 @@ static int send_function_desc(bool vision_enabled)
 
     class_t *iter = classes;
     while (iter) {
-        if (vision_enabled && strcmp(iter->name, "look_around") == 0) {
+        // Always register vision functions - audio-only mode removed
+        if (strcmp(iter->name, "look_around") == 0) {
             cJSON *tool = cJSON_CreateObject();
             cJSON_AddItemToArray(tools, tool);
             cJSON_AddStringToObject(tool, "type", "function");
@@ -425,18 +479,18 @@ static int send_function_desc(bool vision_enabled)
     return 0;
 }
 
-// WebRTC event handler (migrado de webrtc.c original)
+// WebRTC event handler - improved based on WebRTC documentation
 static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
 {
     ESP_LOGI(TAG, "WebRTC Event: %d", event->type);
     
     if (event->type == ESP_WEBRTC_EVENT_DATA_CHANNEL_CONNECTED) {
-        ESP_LOGI(TAG, "Data channel connected, creating ESP channel");
-        ESP_LOGI(TAG, "Canal de datos conectado. Creando canal ESP...");
+        ESP_LOGI(TAG, "Data channel connected, creating oai-events channel");
         
-        // Create data channel manually
+        // Create data channel with proper label for OpenAI events
+        // Per the WebRTC API docs, OpenAI uses "oai-events" for event communication
         esp_peer_data_channel_cfg_t cfg = {
-            .label = "esp_channel",
+            .label = "oai-events",  // OpenAI standard data channel name
         };
         esp_peer_handle_t peer_handle = NULL;
         esp_webrtc_get_peer_connection(webrtc, &peer_handle);
@@ -445,13 +499,19 @@ static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
     else if (event->type == ESP_WEBRTC_EVENT_DATA_CHANNEL_OPENED) {
         ESP_LOGI(TAG, "Data channel opened - sending initial configuration");
         
-        // Send session update with configuration
-        send_function_desc(vision_mode_enabled);
+        // Send session update with configuration (always with vision enabled)
+        send_function_desc(true);
         
+        // According to WebRTC docs, we can send response.create to trigger initial response
         cJSON *response_create = cJSON_CreateObject();
         cJSON_AddStringToObject(response_create, "type", "response.create");
         
-        char *create_json = cJSON_Print(response_create);
+        // Add optional response configuration for consistency
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddNullToObject(response, "instructions");  // Use session instructions
+        cJSON_AddItemToObject(response_create, "response", response);
+        
+        char *create_json = cJSON_PrintUnformatted(response_create);  // Use unformatted for efficiency
         if (create_json) {
             ESP_LOGI(TAG, "Sending response.create to trigger initial greeting");
             esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, 
@@ -460,7 +520,7 @@ static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
         }
         cJSON_Delete(response_create);
         
-        ESP_LOGI(TAG, "Fully operational system. Ready to receive commands.");
+        ESP_LOGI(TAG, "✅ Fully operational. Ready to receive commands.");
     }
     else if (event->type == ESP_WEBRTC_EVENT_CONNECT_FAILED || 
              event->type == ESP_WEBRTC_EVENT_DATA_CHANNEL_CLOSED) {
@@ -473,13 +533,19 @@ static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
     return 0;
 }
 
-// Process JSON functions
+// Process JSON functions - improved error handling
 static int match_and_execute(cJSON *cur, attribute_t *attr, const char *call_id)
 {
     cJSON *attr_value = cJSON_GetObjectItemCaseSensitive(cur, attr->name);
     if (!attr_value) {
         if (attr->required) {
             ESP_LOGW(TAG, "Missing required attribute: %s", attr->name);
+            // Send error response back to OpenAI for missing required parameters
+            if (call_id) {
+                char error_msg[256];
+                snprintf(error_msg, sizeof(error_msg), "Error: Missing required parameter '%s'", attr->name);
+                send_vision_result_to_openai(error_msg, call_id);
+            }
         }
         return 0;
     }
@@ -575,12 +641,18 @@ static int process_json(const char *json_data)
     return 0;
 }
 
-// WebRTC data handler (migrado de webrtc.c original)
+// WebRTC data handler - optimized for real-time processing
 static int webrtc_data_handler(esp_webrtc_custom_data_via_t via, uint8_t *data, int size, void *ctx)
 {
-    // Only log for data channel messages (reduced logging for performance)
+    // Validate input parameters
+    if (!data || size <= 0) {
+        ESP_LOGW(TAG, "Invalid data received: size=%d", size);
+        return -1;
+    }
+    
+    // Only process data channel messages
     if (via == ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL) {
-        // Log only critical messages to avoid audio interruption
+        // Log only in debug mode to avoid audio interruption
 #if defined(CONFIG_AG_WEBRTC_DEBUG_LOGS) && CONFIG_AG_WEBRTC_DEBUG_LOGS
         ESP_LOGD(TAG, "Data received via DataChannel (%d bytes)", size);
 #endif
@@ -610,8 +682,8 @@ static int webrtc_data_handler(esp_webrtc_custom_data_via_t via, uint8_t *data, 
         }
     }
     
-    // Parse and handle different message types
-    cJSON *root = cJSON_Parse((const char *)data);
+    // Parse and handle different message types - optimized parsing
+    cJSON *root = cJSON_ParseWithLength((const char *)data, size);  // Use length-aware parsing
     if (root) {
         cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
         if (type && cJSON_IsString(type)) {
@@ -654,7 +726,7 @@ static int webrtc_data_handler(esp_webrtc_custom_data_via_t via, uint8_t *data, 
             }
             else if (strcmp(type_str, "response.created") == 0) {
                 ESP_LOGI(TAG, "Response generation started");
-                // Track active response
+                // Track active response with improved tracking
                 if (response_state.mutex && xSemaphoreTake(response_state.mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                     response_state.response_in_progress = true;
                     cJSON *response_obj = cJSON_GetObjectItemCaseSensitive(root, "response");
@@ -662,6 +734,7 @@ static int webrtc_data_handler(esp_webrtc_custom_data_via_t via, uint8_t *data, 
                         cJSON *id = cJSON_GetObjectItemCaseSensitive(response_obj, "id");
                         if (id && cJSON_IsString(id)) {
                             strncpy(response_state.active_response_id, id->valuestring, sizeof(response_state.active_response_id) - 1);
+                            response_state.active_response_id[sizeof(response_state.active_response_id) - 1] = '\0';
                         }
                     }
                     xSemaphoreGive(response_state.mutex);
@@ -670,17 +743,49 @@ static int webrtc_data_handler(esp_webrtc_custom_data_via_t via, uint8_t *data, 
             else if (strcmp(type_str, "error") == 0) {
                 cJSON *error = cJSON_GetObjectItemCaseSensitive(root, "error");
                 if (error) {
-                    char *error_str = cJSON_Print(error);
-                    ESP_LOGE(TAG, "OpenAI Error: %s", error_str ? error_str : "unknown");
-                    printf("❌ Error from OpenAI: %s\n", error_str ? error_str : "unknown");
-                    if (error_str) mem_free(error_str);
+                    // Extract error details for better debugging
+                    cJSON *code = cJSON_GetObjectItemCaseSensitive(error, "code");
+                    cJSON *message = cJSON_GetObjectItemCaseSensitive(error, "message");
+                    cJSON *param = cJSON_GetObjectItemCaseSensitive(error, "param");
+                    
+                    ESP_LOGE(TAG, "OpenAI Error - Code: %s, Message: %s, Param: %s",
+                            code && cJSON_IsString(code) ? code->valuestring : "unknown",
+                            message && cJSON_IsString(message) ? message->valuestring : "unknown",
+                            param && cJSON_IsString(param) ? param->valuestring : "none");
+                    
+                    printf("❌ Error: %s\n", 
+                           message && cJSON_IsString(message) ? message->valuestring : "Unknown error");
+                    
+                    // Handle specific error codes
+                    if (code && cJSON_IsString(code)) {
+                        if (strcmp(code->valuestring, "rate_limit_exceeded") == 0) {
+                            ESP_LOGW(TAG, "Rate limit hit - implementing backoff");
+                            vTaskDelay(pdMS_TO_TICKS(2000));  // 2 second backoff
+                        } else if (strcmp(code->valuestring, "invalid_api_key") == 0) {
+                            ESP_LOGE(TAG, "Invalid API key - check configuration");
+                        }
+                    }
                 }
             }
             else if (strcmp(type_str, "session.created") == 0) {
                 ESP_LOGI(TAG, "Session created successfully");
+                // Session is ready - we can now configure it with our tools
+                send_function_desc(true);
             }
             else if (strcmp(type_str, "session.updated") == 0) {
                 ESP_LOGI(TAG, "Session configuration updated");
+            }
+            else if (strcmp(type_str, "input_audio_buffer.speech_started") == 0) {
+                ESP_LOGD(TAG, "Speech detected - user is speaking");
+            }
+            else if (strcmp(type_str, "input_audio_buffer.speech_stopped") == 0) {
+                ESP_LOGD(TAG, "Speech stopped - processing audio");
+            }
+            else if (strcmp(type_str, "response.audio.delta") == 0) {
+                // Audio data is being received - handled by WebRTC automatically
+            }
+            else if (strcmp(type_str, "response.audio.done") == 0) {
+                ESP_LOGD(TAG, "Audio response completed");
             }
             else {
                 ESP_LOGD(TAG, "Unhandled message type: %s", type_str);
@@ -725,16 +830,18 @@ esp_err_t openai_realtime_start(void)
             .audio_info = {
 #ifdef CONFIG_AG_WEBRTC_SUPPORT_OPUS
                 .codec = ESP_PEER_AUDIO_CODEC_OPUS,
-                .sample_rate = 24000,
-                .channel = 2,
+                .sample_rate = 24000,  // OpenAI Realtime API requirement
+                .channel = 1,           // Mono audio for efficiency
 #else
                 .codec = ESP_PEER_AUDIO_CODEC_G711A,
+                .sample_rate = 8000,    // G711 standard rate
+                .channel = 1,
 #endif
             },
             .audio_dir = ESP_PEER_MEDIA_DIR_SEND_RECV,
-            .enable_data_channel = CONFIG_AG_WEBRTC_DATA_CHANNEL_ENABLED,
+            .enable_data_channel = true,  // Always enable for events
             .on_custom_data = webrtc_data_handler,
-            .manual_ch_create = true,
+            .manual_ch_create = true,  // Manual channel creation for oai-events
             .extra_cfg = &peer_cfg,
             .extra_size = sizeof(peer_cfg),
         },
@@ -811,6 +918,25 @@ esp_err_t openai_realtime_send_text(const char *text)
         return ESP_ERR_INVALID_ARG;
     }
     
+    // Check if a response is already in progress
+    if (response_state.mutex && xSemaphoreTake(response_state.mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (response_state.response_in_progress) {
+            ESP_LOGW(TAG, "Response already in progress, cancelling previous");
+            // Send a cancel event for the current response
+            cJSON *cancel = cJSON_CreateObject();
+            cJSON_AddStringToObject(cancel, "type", "response.cancel");
+            char *cancel_json = cJSON_PrintUnformatted(cancel);
+            if (cancel_json) {
+                esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL,
+                                          (uint8_t *)cancel_json, strlen(cancel_json));
+                mem_free(cancel_json);
+            }
+            cJSON_Delete(cancel);
+            vTaskDelay(pdMS_TO_TICKS(100));  // Brief delay for cancel to process
+        }
+        xSemaphoreGive(response_state.mutex);
+    }
+    
     ESP_LOGI(TAG, "Sending text: %s", text);
     
     // First, send the conversation.item.create with the user message
@@ -829,25 +955,36 @@ esp_err_t openai_realtime_send_text(const char *text)
     cJSON_AddItemToObject(item, "content", contentArray);
     cJSON_AddItemToObject(root, "item", item);
     
-    char *json_string = cJSON_Print(root);
+    char *json_string = cJSON_PrintUnformatted(root);  // Use unformatted for efficiency
     if (json_string) {
         ESP_LOGI(TAG, "Sending conversation.item.create");
-        esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, (uint8_t *)json_string, strlen(json_string));
+        esp_err_t ret = esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, 
+                                                    (uint8_t *)json_string, strlen(json_string));
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to send conversation item: %s", esp_err_to_name(ret));
+            mem_free(json_string);
+            cJSON_Delete(root);
+            return ret;
+        }
         mem_free(json_string);
     }
     cJSON_Delete(root);
     
     // Short delay to ensure message is processed
-    vTaskDelay(pdMS_TO_TICKS(50)); // Reduced delay for better responsiveness
+    vTaskDelay(pdMS_TO_TICKS(20)); // Minimal delay for message ordering
     
     // Then send response.create to trigger the response
     cJSON *response_create = cJSON_CreateObject();
     cJSON_AddStringToObject(response_create, "type", "response.create");
     
-    char *create_json = cJSON_Print(response_create);
+    char *create_json = cJSON_PrintUnformatted(response_create);  // Use unformatted
     if (create_json) {
         ESP_LOGI(TAG, "Sending response.create to trigger response");
-        esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, (uint8_t *)create_json, strlen(create_json));
+        esp_err_t ret = esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, 
+                                                    (uint8_t *)create_json, strlen(create_json));
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to send response.create: %s", esp_err_to_name(ret));
+        }
         mem_free(create_json);
     }
     cJSON_Delete(response_create);
@@ -941,12 +1078,8 @@ esp_err_t openai_realtime_resume_audio(void)
 
 esp_err_t openai_realtime_set_activation_mode(bool vision_enabled)
 {
-    vision_mode_enabled = vision_enabled;
-    
-    // If WebRTC is already connected, update the session configuration
-    if (webrtc) {
-        send_function_desc(vision_mode_enabled);
-    }
-    
+    // Deprecated: Vision is always enabled now
+    // This function is kept for backward compatibility but does nothing
+    ESP_LOGW(TAG, "set_activation_mode is deprecated - vision is always enabled");
     return ESP_OK;
 }

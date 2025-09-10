@@ -1,0 +1,12 @@
+# ESP32-S3 16MB Flash Partition Table
+# Name,     Type, SubType, Offset,   Size,     Flags
+# Note: Firmware will use the partition labeled "factory"
+#
+# Optimized for 16MB flash without OTA:
+# - Large app partition (10MB) for complex applications
+# - Large SPIFFS (5MB) for file storage and audio recordings
+#
+nvs,        data, nvs,     0x9000,   0x6000,
+phy_init,   data, phy,     0xf000,   0x1000,
+factory,    app,  factory, 0x10000,  10M,
+spiffs,     data, spiffs,  0xA10000, 5M,
