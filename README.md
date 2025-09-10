@@ -164,9 +164,6 @@ Configure the AI assistant behavior:
 You can customize the AI assistant's personality and behavior by editing `components/webrtc/prompts.h`:
 
 ```c
-// Audio-only mode prompt
-#define INSTRUCTIONS_AUDIO_ONLY "You are Jarvis, a AI resident in your wearer's glasses (mode audio)."
-
 // Audio + Vision mode prompt  
 #define INSTRUCTIONS_AUDIO_VISION "You are Jarvis, a AI resident in your wearer's glasses (mode audio+vision). You can see using the function look_around."
 
