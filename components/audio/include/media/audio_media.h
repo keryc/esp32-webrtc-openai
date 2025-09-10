@@ -18,6 +18,7 @@ typedef struct {
 typedef struct {
     audio_render_handle_t audio_render;
     av_render_handle_t    player;
+    void                 *recorder_handle;
 } audio_player_system_t;
 
 #ifdef __cplusplus

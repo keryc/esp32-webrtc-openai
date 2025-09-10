@@ -36,6 +36,13 @@ typedef void (*audio_feedback_wav_callback_t)(const char *filename, bool success
 esp_err_t audio_feedback_init(void);
 
 /**
+ * @brief Set recorder handle for audio feedback (optional)
+ * 
+ * @param recorder_handle Handle to recorder for recording feedback audio
+ */
+void audio_feedback_set_recorder_handle(void *recorder_handle);
+
+/**
  * @brief Play audio feedback
  * 
  * @param type Type of feedback to play

@@ -31,6 +31,9 @@ static struct {
     
     // Async playback task
     TaskHandle_t playback_task_handle;
+    
+    // Optional recorder handle
+    void *recorder_handle;
 } feedback_state = {0};
 
 
@@ -58,8 +61,8 @@ esp_err_t audio_feedback_init(void)
         return ret;
     }
     
-    // Initialize audio player system
-    ret = audio_player_build_system(&feedback_state.player_sys);
+    // Initialize audio player system (will use recorder if set later)
+    ret = audio_player_build_system(&feedback_state.player_sys, feedback_state.recorder_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize audio player");
         esp_vfs_spiffs_unregister(NULL);
@@ -75,6 +78,15 @@ esp_err_t audio_feedback_init(void)
     return ESP_OK;
 }
 
+void audio_feedback_set_recorder_handle(void *recorder_handle)
+{
+    feedback_state.recorder_handle = recorder_handle;
+    // Update the player system with the new recorder handle
+    if (feedback_state.initialized) {
+        feedback_state.player_sys.recorder_handle = recorder_handle;
+        ESP_LOGI(TAG, "Audio feedback recorder handle set: %p", recorder_handle);
+    }
+}
 
 // Asynchronous WAV playback task
 static void audio_feedback_playback_task(void *pvParameters)
